@@ -5,6 +5,7 @@
             +--------------------+
    
 ---- GROUP ----
+
 Urjit Sharma, A01268545
 Ke Yang, A01261443
 Colin Lam, A01265887
@@ -15,7 +16,7 @@ Colin Lam, A01265887
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
-YouTube: https://www.youtube.com/watch?v=4C8J6jLPJPc (for understanding the threads and timer_sleep())
+    YouTube: https://www.youtube.com/watch?v=4C8J6jLPJPc (for understanding the threads and timer_sleep())
 
                  ALARM CLOCK
                  ===========
@@ -26,13 +27,28 @@ YouTube: https://www.youtube.com/watch?v=4C8J6jLPJPc (for understanding the thre
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+    struct sleeping_thread
+    {
+    struct thread * current_thread;
+    int64_t ticks_till_release;
+    struct list_elem next_thread;
+    }
+    Purpose: This struct is used to store the thread that is sleeping and the number of ticks it has to sleep for.
+
+    static struct list sleeping_threads;
+    Purpose: This list is used to store all the threads that are sleeping.
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
+    
+    When a thread calls timer_sleep(), it is added to the sleeping_threads list with the least ticks_till_release thread in the head. The thread is then blocked. When the timer interrupt handler is called, it checks if the head element's ticks_till_release is less than or equal to the current ticks. If so, the thread is unblocked and removed from sleeping_threads list. 
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
+    
+    The timer interrupt handler checks if the head element's ticks_till_release is less than or equal to the current ticks. If so, the thread is unblocked and removed from sleeping_threads list. This minimizes the amount of time spent in the timer interrupt handler.
 
 ---- SYNCHRONIZATION ----
 

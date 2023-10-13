@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.html": "html",
+        "*.rs": "rust",
+        "thread.h": "c"
+    }
+}

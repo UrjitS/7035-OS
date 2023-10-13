@@ -1,0 +1,48 @@
+            +--------------------+
+            | CSCC69             |
+            | PROJECT 1: THREADS |
+            | DESIGN DOCUMENT    |
+            +--------------------+
+   
+---- GROUP ----
+Urjit Sharma, A01268545
+Ke Yang, A01261443
+Colin Lam, A01265887
+
+---- PRELIMINARIES ----
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+YouTube: https://www.youtube.com/watch?v=4C8J6jLPJPc (for understanding the threads and timer_sleep())
+
+                 ALARM CLOCK
+                 ===========
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe what happens in a call to timer_sleep(),
+>> including the effects of the timer interrupt handler.
+
+>> A3: What steps are taken to minimize the amount of time spent in
+>> the timer interrupt handler?
+
+---- SYNCHRONIZATION ----
+
+>> A4: How are race conditions avoided when multiple threads call
+>> timer_sleep() simultaneously?
+
+>> A5: How are race conditions avoided when a timer interrupt occurs
+>> during a call to timer_sleep()?
+
+---- RATIONALE ----
+
+>> A6: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?

@@ -222,8 +222,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
       thread_unblock(temp_sleeping_thread->current_thread);
     }
 
- 
-
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

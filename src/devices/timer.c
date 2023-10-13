@@ -212,18 +212,17 @@ timer_interrupt (struct intr_frame *args UNUSED)
   thread_tick ();
 
   // Check the sleeping_threads list to unlbock any threads that are done sleeping
-  struct list_elem * temp_elm;
-  for (temp_elm = list_begin(&sleeping_threads); temp_elm != list_end(&sleeping_threads); temp_elm = list_next(temp_elm))
-  {
-    struct sleeping_thread * temp_sleeping_thread = list_entry(temp_elm, struct sleeping_thread, next_thread);
-    if (temp_sleeping_thread->ticks_till_release <= ticks)
+  struct list_elem * temp_elm = list_begin(&sleeping_threads);
+  struct sleeping_thread * temp_sleeping_thread = list_entry(temp_elm, struct sleeping_thread, next_thread);
+  if (temp_sleeping_thread->ticks_till_release <= ticks)
     {
       // Remove the thread from the sleeping_threads list
       list_remove(temp_elm);
       // Unblock the thread
       thread_unblock(temp_sleeping_thread->current_thread);
     }
-  }
+
+ 
 
 }
 

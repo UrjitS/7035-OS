@@ -43,7 +43,7 @@ Colin Lam, A01265887
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
     
-    When a thread calls timer_sleep(), it is added to the sleeping_threads list with the least ticks_till_release thread in the head. The thread is then blocked. When the timer interrupt handler is called, it checks if the head element's ticks_till_release is less than or equal to the current ticks. If so, the thread is unblocked and removed from sleeping_threads list. 
+    When a thread calls timer_sleep(), it is added to the sleeping_threads list with the least ticks_till_release thread in the head. The thread is then blocked. When the timer interrupt handler is called, it checks if the head element's ticks_till_release of sleeping_threads list is less than or equal to the current ticks. If so, the thread is unblocked and removed from sleeping_threads list. 
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
@@ -54,6 +54,7 @@ Colin Lam, A01265887
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
+
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?

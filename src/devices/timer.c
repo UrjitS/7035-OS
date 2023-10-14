@@ -27,6 +27,9 @@ struct sleeping_thread
   struct list_elem next_thread;
 };
 
+//Semaphore to ensure only one thread is modifying the sleeping_threads list at a time
+struct semaphore sleeping_threads_semaphore;
+
 // Global list of sleeping threads
 static struct list sleeping_threads = LIST_INITIALIZER(sleeping_threads);
 
@@ -51,6 +54,7 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  sema_init(&sleeping_threads_semaphore, 1); //initialize sleeping_threads_semaphore
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -121,8 +125,8 @@ timer_sleep (int64_t ticks)
   temp_sleeping_thread.current_thread = thread_current();
   temp_sleeping_thread.ticks_till_release = start + ticks;
 
-  // Ensure interrupts are disabled while we are modifying the sleeping_threads list
-  enum intr_level old_level = intr_disable();
+  // block other thread by decrease the semaphore
+  sema_down(&sleeping_threads_semaphore);
 
   // Insert the sleeping thread into the sleeping_threads list in sorted order
   list_insert_ordered(&sleeping_threads, &temp_sleeping_thread.next_thread, order_sleeping_threads, NULL);
@@ -130,8 +134,8 @@ timer_sleep (int64_t ticks)
   // Block the thread
   thread_block();
 
-  // Re-enable interrupts
-  intr_set_level(old_level);
+  // release the semaphore
+  sema_up(&sleeping_threads_semaphore);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be

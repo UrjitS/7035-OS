@@ -131,9 +131,11 @@ timer_sleep (int64_t ticks)
   // Insert the sleeping thread into the sleeping_threads list in sorted order
   list_insert_ordered(&sleeping_threads, &temp_sleeping_thread.next_thread, order_sleeping_threads, NULL);
 
+  enum intr_level old_level = intr_disable();
   // Block the thread
   thread_block();
-
+  intr_set_level(old_level);
+  
   // release the semaphore
   sema_up(&sleeping_threads_semaphore);
 }

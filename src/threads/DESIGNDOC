@@ -54,12 +54,19 @@ Colin Lam, A01265887
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
+    
+    In the critical section where sleeping thread is inserted to the sleeping_threads list, and being blocked,  we disable interrupts. This ensures that no other thread can interrupt the current thread and insert itself into the sleeping_threads list. After the thread is inserted, we enable interrupts again.
 
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
+    We protect the sleeping_threads with interrupts disabled. 
 
 ---- RATIONALE ----
 
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+        
+    We chose this design because it utilized the data structure provided by PintOS source code. We considered construct a new data structure such as a priority queue to store the sleeping threads, but it would be more complicated to implement, so we decided to make use of the existing list data structure, and insert the sleeping threads in order of ticks_till_release. This design is superior to another design we considered because it is simple and easy to implement.
+
+                

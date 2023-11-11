@@ -125,19 +125,17 @@ timer_sleep (int64_t ticks)
   temp_sleeping_thread.current_thread = thread_current();
   temp_sleeping_thread.ticks_till_release = start + ticks;
 
-  // block other thread by decrease the semaphore
-  sema_down(&sleeping_threads_semaphore);
+  // Ensure interrupts are disabled while we are modifying the sleeping_threads list
+  enum intr_level old_level = intr_disable();
 
   // Insert the sleeping thread into the sleeping_threads list in sorted order
   list_insert_ordered(&sleeping_threads, &temp_sleeping_thread.next_thread, order_sleeping_threads, NULL);
 
-  enum intr_level old_level = intr_disable();
   // Block the thread
   thread_block();
+
+  // Re-enable interrupts
   intr_set_level(old_level);
-  
-  // release the semaphore
-  sema_up(&sleeping_threads_semaphore);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -218,17 +216,23 @@ timer_interrupt (struct intr_frame *args UNUSED)
   thread_tick ();
 
   // Check the sleeping_threads list to unlbock any threads that are done sleeping
-  struct list_elem * temp_elm = list_begin(&sleeping_threads);
-  struct sleeping_thread * temp_sleeping_thread = list_entry(temp_elm, struct sleeping_thread, next_thread);
-  if ( !list_empty(&sleeping_threads)&& temp_sleeping_thread->ticks_till_release <= ticks)
+  struct list_elem * temp_elm;
+  for (temp_elm = list_begin(&sleeping_threads); temp_elm != list_end(&sleeping_threads); temp_elm = list_next(temp_elm))
+  {
+    struct sleeping_thread * temp_sleeping_thread = list_entry(temp_elm, struct sleeping_thread, next_thread);
+    if (temp_sleeping_thread->ticks_till_release <= ticks)
     {
       // Remove the thread from the sleeping_threads list
       list_remove(temp_elm);
       // Unblock the thread
       thread_unblock(temp_sleeping_thread->current_thread);
+    } else {
+      break;
     }
+  }
 
 }
+
 
 /* Returns true if LOOPS iterations waits for more than one timer
    tick, otherwise false. */

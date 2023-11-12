@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/init.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -46,6 +47,7 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 static bool order_sleeping_threads (const struct list_elem * first_elem, const struct list_elem * second_elm, void * aux UNUSED);
+void update_load_avg (void);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -215,6 +217,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
+  /* Update load_avg once per second. */
+  if (ticks % TIMER_FREQ == 0)
+    update_load_avg();
+
   // Check the sleeping_threads list to unlbock any threads that are done sleeping
   struct list_elem * temp_elm;
   for (temp_elm = list_begin(&sleeping_threads); temp_elm != list_end(&sleeping_threads); temp_elm = list_next(temp_elm))
@@ -232,6 +238,14 @@ timer_interrupt (struct intr_frame *args UNUSED)
   }
 
 }
+
+/* Function to update load_avg. */
+void
+update_load_avg (void)
+{
+  load_avg = calculate_load_avg();
+}
+
 
 
 /* Returns true if LOOPS iterations waits for more than one timer

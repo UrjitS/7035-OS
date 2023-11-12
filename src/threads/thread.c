@@ -8,9 +8,11 @@
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
+#include "threads/fixed-point.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/init.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -70,6 +72,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+void count_ready_threads(struct thread *t, void *aux);
+int get_ready_threads_count(void);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -345,11 +349,23 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
-/* Sets the current thread's nice value to NICE. */
+/* Returns the new calculated priority */
+int 
+thread_calculate_new_priority(int new_nice) {
+  // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+  // int priority = PRI_MAX - (thread_current ()->recent_cpu / 4) - (new_nice * 2);
+}
+
+/* Sets the current thread's nice value to new_nice and recalculates the thread's priority 
+based on the new value. If the running thread no longer has the highest priority, yields. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  // Set Current Threads Nice Value to new nice 
+  thread_current ()->nice_value = nice;
+
+  // Recalculate the thread's priority based on the new value
+  // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
 }
 
 /* Returns the current thread's nice value. */
@@ -357,15 +373,50 @@ int
 thread_get_nice (void) 
 {
   /* Not yet implemented. */
-  return 0;
+  
+  return thread_current ()->nice_value;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return calculate_load_avg() * 100;
+}
+
+int calculate_load_avg(void) {
+  // load_avg = (59/60)*load_avg + (1/60)*ready_threads,
+  int ready_threads = get_ready_threads_count();
+  
+  /* Convert integers to fixed-point representation */
+  int32_t load_avg_fp = convert_int_to_fixed_point(load_avg);
+  int32_t ready_threads_fp = convert_int_to_fixed_point(ready_threads);
+  int32_t fifty_nine_fp = convert_int_to_fixed_point(59);
+  int32_t sixty_fp = convert_int_to_fixed_point(60);
+
+  /* Perform arithmetic operations */
+  int32_t load_avg_new_fp = add_fixed_point_numbers(divide_fixed_point_numbers(multiply_fixed_point_numbers(fifty_nine_fp, load_avg_fp), sixty_fp), 
+                                                    divide_fixed_point_numbers(ready_threads_fp, sixty_fp));
+
+  /* Convert result back to integer */
+  int load_avg_new = convert_fixed_point_to_int_round_to_nearest(load_avg_new_fp);
+
+  return load_avg_new;
+}
+
+/* Function to count threads in THREAD_READY state. */
+void count_ready_threads(struct thread *t, void *aux) {
+  int *count = aux;
+  if (t->status == THREAD_READY) {
+    (*count)++;
+  }
+}
+
+/* Function to get the count of threads in THREAD_READY state. */
+int get_ready_threads_count(void) {
+  int count = 0;
+  thread_foreach(count_ready_threads, &count);
+  return count;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
@@ -375,7 +426,7 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
-
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -424,7 +475,7 @@ kernel_thread (thread_func *function, void *aux)
   function (aux);       /* Execute the thread function. */
   thread_exit ();       /* If function() returns, kill the thread. */
 }
-
+
 /* Returns the running thread. */
 struct thread *
 running_thread (void) 
@@ -462,6 +513,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->nice_value = 0;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -578,7 +630,7 @@ allocate_tid (void)
 
   return tid;
 }
-
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

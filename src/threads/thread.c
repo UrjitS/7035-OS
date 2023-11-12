@@ -13,6 +13,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/init.h"
+#include "../devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -26,16 +27,17 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
-/* List of all processes.  Processes are added to this list
-   when they are first scheduled and removed when they exit. */
-static struct list all_list;
-
-/* Idle thread. */
-static struct thread *idle_thread;
 
 /* Initial thread, the thread running init.c:main(). */
 static struct thread *initial_thread;
 
+/* Idle thread. */
+static struct thread *idle_thread;
+
+/* List of all processes.  Processes are added to this list
+   when they are first scheduled and removed when they exit. */
+static struct list all_list;
+int32_t LOAD_AVG = 0;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
@@ -72,9 +74,15 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-void count_ready_threads(struct thread *t, void *aux);
-int get_ready_threads_count(void);
+int count_running_or_ready_threads(void);
+void check_thread_status(struct thread *t, void *aux);
 
+struct thread * get_idle_thread(void) {
+  return idle_thread;
+}
+struct list * get_all_list(void) {
+  return &all_list;
+}
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -174,10 +182,12 @@ thread_create (const char *name, int priority,
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
+  struct thread *current_thread = thread_current ();
   tid_t tid;
 
   ASSERT (function != NULL);
 
+  
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
   if (t == NULL)
@@ -186,6 +196,8 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->nice_value = current_thread->nice_value;
+
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -201,6 +213,15 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+  
+  /* Initialize recent_cpu. */
+  if (current_thread == initial_thread) {
+    t->recent_cpu = convert_int_to_fixed_point(0);
+  } else {
+    t->recent_cpu = current_thread->recent_cpu;
+  }
+
+  t->priority = calculate_priority();
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -349,12 +370,6 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
-/* Returns the new calculated priority */
-int 
-thread_calculate_new_priority(int new_nice) {
-  // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
-  // int priority = PRI_MAX - (thread_current ()->recent_cpu / 4) - (new_nice * 2);
-}
 
 /* Sets the current thread's nice value to new_nice and recalculates the thread's priority 
 based on the new value. If the running thread no longer has the highest priority, yields. */
@@ -362,69 +377,71 @@ void
 thread_set_nice (int nice UNUSED) 
 {
   // Set Current Threads Nice Value to new nice 
+  if (nice < -20) {
+    nice = -20;
+  } else if (nice > 20) {
+    nice = 20;
+  }
   thread_current ()->nice_value = nice;
 
   // Recalculate the thread's priority based on the new value
-  // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+  int priority = calculate_priority();
+  thread_current ()->priority = priority;
+
+  // If the running thread no longer has the highest priority, yields.
+  if (!list_empty(&ready_list) && priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) {
+    thread_yield();
+  }
+
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  
   return thread_current ()->nice_value;
+}
+
+int
+calculate_priority(void) {
+  // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+
+  struct thread *current_thread = thread_current();
+
+  /* Convert integers to fixed-point representation */
+  int32_t nice_fp = convert_int_to_fixed_point(current_thread->nice_value);
+  int32_t four_fp = convert_int_to_fixed_point(4);
+  int32_t two_fp = convert_int_to_fixed_point(2);
+
+  /* Calculate (recent_cpu / 4) */
+  int32_t recent_cpu_div_4_fp = divide_fixed_point_numbers(current_thread->recent_cpu, four_fp);
+
+  /* Calculate (nice * 2) */
+  int32_t nice_times_2_fp = multiply_fixed_point_numbers(nice_fp, two_fp);
+
+  /* Calculate PRI_MAX - (recent_cpu / 4) - (nice * 2) */
+  int32_t sub1 = subtract_fixed_point_numbers(convert_int_to_fixed_point(PRI_MAX), recent_cpu_div_4_fp);
+  int32_t priority_fp = subtract_fixed_point_numbers(sub1, nice_times_2_fp);
+
+  /* Convert result back to integer */
+  int priority = convert_fixed_point_to_int_round_towards_zero(priority_fp);
+
+  return priority;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  return calculate_load_avg() * 100;
+  return convert_fixed_point_to_int_round_to_nearest(multiply_fixed_point_number_by_int(LOAD_AVG, 100));
 }
 
-int calculate_load_avg(void) {
-  // load_avg = (59/60)*load_avg + (1/60)*ready_threads,
-  int ready_threads = get_ready_threads_count();
-  
-  /* Convert integers to fixed-point representation */
-  int32_t load_avg_fp = convert_int_to_fixed_point(load_avg);
-  int32_t ready_threads_fp = convert_int_to_fixed_point(ready_threads);
-  int32_t fifty_nine_fp = convert_int_to_fixed_point(59);
-  int32_t sixty_fp = convert_int_to_fixed_point(60);
-
-  /* Perform arithmetic operations */
-  int32_t load_avg_new_fp = add_fixed_point_numbers(divide_fixed_point_numbers(multiply_fixed_point_numbers(fifty_nine_fp, load_avg_fp), sixty_fp), 
-                                                    divide_fixed_point_numbers(ready_threads_fp, sixty_fp));
-
-  /* Convert result back to integer */
-  int load_avg_new = convert_fixed_point_to_int_round_to_nearest(load_avg_new_fp);
-
-  return load_avg_new;
-}
-
-/* Function to count threads in THREAD_READY state. */
-void count_ready_threads(struct thread *t, void *aux) {
-  int *count = aux;
-  if (t->status == THREAD_READY) {
-    (*count)++;
-  }
-}
-
-/* Function to get the count of threads in THREAD_READY state. */
-int get_ready_threads_count(void) {
-  int count = 0;
-  thread_foreach(count_ready_threads, &count);
-  return count;
-}
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return convert_fixed_point_to_int_round_to_nearest(multiply_fixed_point_number_by_int(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -512,8 +529,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  t->priority = priority;
-  t->nice_value = 0;
+  if (t == initial_thread) {
+    t->nice_value = 0;
+  }
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();

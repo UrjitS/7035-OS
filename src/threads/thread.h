@@ -24,6 +24,9 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* Declare LOAD_AVG as an extern variable */
+extern int32_t LOAD_AVG;
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -89,6 +92,7 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     int nice_value;
+    int32_t recent_cpu;
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -107,6 +111,8 @@ struct thread
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
+struct thread * get_idle_thread(void);
+struct list * get_all_list(void);
 void thread_init (void);
 void thread_start (void);
 
@@ -137,6 +143,8 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-int calculate_load_avg(void);
+
+
+int calculate_priority(void);
 
 #endif /* threads/thread.h */

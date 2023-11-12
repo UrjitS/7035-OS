@@ -8,7 +8,9 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/init.h"
-  
+#include "threads/fixed-point.h"
+#include "threads/init.h"  
+
 /* See [8254] for hardware details of the 8254 timer chip. */
 
 #if TIMER_FREQ < 19
@@ -48,7 +50,12 @@ static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 static bool order_sleeping_threads (const struct list_elem * first_elem, const struct list_elem * second_elm, void * aux UNUSED);
 void update_load_avg (void);
+void update_recent_cpu_for_all_threads(void);
+void update_priority_for_all_threads(void);
 
+
+int count_running_or_ready_threads1(void);
+void check_thread_status1(struct thread *t, void *aux);
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -217,9 +224,23 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
+
+  /* Increment recent_cpu for the running thread, unless the idle thread is running. */
+  struct thread *current_thread = thread_current ();
+  if (current_thread != get_idle_thread()) {
+    current_thread->recent_cpu = add_int_to_fixed_point_number(current_thread->recent_cpu, 1);
+  }
+
   /* Update load_avg once per second. */
-  if (ticks % TIMER_FREQ == 0)
+  if (ticks % TIMER_FREQ == 0) {
     update_load_avg();
+    update_recent_cpu_for_all_threads();
+  }
+
+ /* Recalculate priority once every fourth clock tick for every thread */
+  if (ticks % 4 == 0) {
+    update_priority_for_all_threads();
+  }
 
   // Check the sleeping_threads list to unlbock any threads that are done sleeping
   struct list_elem * temp_elm;
@@ -239,13 +260,85 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
 }
 
+void 
+update_priority_for_all_threads(void) {
+  struct list_elem * temp_elm;
+  for (temp_elm = list_begin(get_all_list()); temp_elm != list_end(get_all_list()); temp_elm = list_next(temp_elm))
+  {
+    struct thread * temp_thread = list_entry(temp_elm, struct thread, allelem);
+    if (temp_thread != get_idle_thread()) {
+      /* Split the equation into separate parts */
+      temp_thread->priority = calculate_priority();
+    }
+  }
+}
+
+
 /* Function to update load_avg. */
 void
 update_load_avg (void)
 {
-  load_avg = calculate_load_avg();
+  LOAD_AVG = calculate_load_avg1();
 }
 
+/* Function to count the number of threads that are either running or ready */
+int count_running_or_ready_threads1(void) {
+  int count = 0;
+  // Disable interrupts
+  enum intr_level old_level;
+  old_level = intr_disable();
+  // Iterate through all threads and check if they are running or ready
+  thread_foreach(check_thread_status1, &count);
+  // Re-enable interrupts
+  intr_set_level(old_level);
+  
+  return count;
+}
+
+/* Function to check the status of a thread and increment the count if the thread is running or ready */
+void check_thread_status1(struct thread *t, void *aux) {
+  int *count = (int *)aux;
+  /* Check if the thread is not the idle thread */
+  if (t != get_idle_thread() && (t->status == THREAD_RUNNING || t->status == THREAD_READY)) {
+    (*count)++;
+  }
+}
+int 
+calculate_load_avg1(void) {
+  /* Convert integers to fixed-point representation */
+  int32_t fifty_nine_fp = convert_int_to_fixed_point(59);
+  int32_t sixty_fp = convert_int_to_fixed_point(60);
+
+  /* Calculate (59/60)*load_avg */
+  int32_t part1 = divide_fixed_point_numbers(fifty_nine_fp, sixty_fp);
+  int32_t part1_divided = multiply_fixed_point_numbers(part1, LOAD_AVG);
+
+  /* Calculate (1/60)*ready_threads */
+  int32_t part2 = divide_fixed_point_numbers(convert_int_to_fixed_point(1), sixty_fp);
+  int32_t part2_mul = multiply_fixed_point_number_by_int(part2, count_running_or_ready_threads1());
+  /* Add the two parts together */
+  int32_t load_avg_new_fp = add_fixed_point_numbers(part1_divided, part2_mul);
+  /* Convert result back to integer */
+  int load_avg_new = load_avg_new_fp;
+  return load_avg_new;
+}
+
+
+void 
+update_recent_cpu_for_all_threads(void) {
+  struct list_elem * temp_elm;
+  for (temp_elm = list_begin(get_all_list()); temp_elm != list_end(get_all_list()); temp_elm = list_next(temp_elm))
+  {
+    struct thread * temp_thread = list_entry(temp_elm, struct thread, allelem);
+    /* Split the equation into separate parts */
+    int32_t load_avg_times_two = multiply_fixed_point_numbers(LOAD_AVG, convert_int_to_fixed_point(2));
+    int32_t denominator = add_fixed_point_numbers(load_avg_times_two, convert_int_to_fixed_point(1));
+    int32_t ratio = divide_fixed_point_numbers(load_avg_times_two, denominator);
+    int32_t product = multiply_fixed_point_numbers(ratio, temp_thread->recent_cpu);
+    int32_t addnums = add_int_to_fixed_point_number(product, temp_thread->nice_value);
+    temp_thread->recent_cpu = addnums;
+  }
+}
 
 
 /* Returns true if LOOPS iterations waits for more than one timer

@@ -9,7 +9,4 @@
 /* Page directory with kernel mappings only. */
 extern uint32_t *init_page_dir;
 
-
-int64_t load_avg;
-
 #endif /* threads/init.h */

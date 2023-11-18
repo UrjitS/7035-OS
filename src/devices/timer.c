@@ -7,38 +7,15 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-#include "threads/init.h"
-#include "threads/fixed-point.h"
-#include "threads/init.h"
-
 /* See [8254] for hardware details of the 8254 timer chip. */
-
 #if TIMER_FREQ < 19
 #error 8254 timer requires TIMER_FREQ >= 19
 #endif
 #if TIMER_FREQ > 1000
 #error TIMER_FREQ <= 1000 recommended
 #endif
-
-/*
-Contains inofrmation to keep track of sleeping threads
-*/
-struct sleeping_thread
-{
-  struct thread *current_thread;
-  int64_t ticks_till_release;
-  struct list_elem next_thread;
-};
-
-// Semaphore to ensure only one thread is modifying the sleeping_threads list at a time
-struct semaphore sleeping_threads_semaphore;
-
-// Global list of sleeping threads
-static struct list sleeping_threads = LIST_INITIALIZER(sleeping_threads);
-
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
-
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -48,7 +25,6 @@ static bool too_many_loops(unsigned loops);
 static void busy_wait(int64_t loops);
 static void real_time_sleep(int64_t num, int32_t denom);
 static void real_time_delay(int64_t num, int32_t denom);
-static bool order_sleeping_threads(const struct list_elem *first_elem, const struct list_elem *second_elm, void *aux UNUSED);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -56,7 +32,6 @@ void timer_init(void)
 {
   pit_configure_channel(0, 2, TIMER_FREQ);
   intr_register_ext(0x20, timer_interrupt, "8254 Timer");
-  sema_init(&sleeping_threads_semaphore, 1); // initialize sleeping_threads_semaphore
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -103,39 +78,22 @@ timer_elapsed(int64_t then)
   return timer_ticks() - then;
 }
 
-/* Comparison function for sleeping_thread elements in the list, used to keep the global sleeping_threads list ordered*/
-static bool
-order_sleeping_threads(const struct list_elem *first_elem, const struct list_elem *second_elm, void *aux UNUSED)
-{
-  const struct sleeping_thread *thread_one = list_entry(first_elem, struct sleeping_thread, next_thread);
-  const struct sleeping_thread *thread_two = list_entry(second_elm, struct sleeping_thread, next_thread);
-  return thread_one->ticks_till_release < thread_two->ticks_till_release;
-}
-
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep(int64_t ticks)
 {
-  int64_t start = timer_ticks();
+  // Ensure that ticks is positive
+  if (ticks <= 0)
+  {
+    return;
+  }
 
   ASSERT(intr_get_level() == INTR_ON);
 
-  // Add thread to sleeping threads list
-  struct sleeping_thread temp_sleeping_thread;
-  temp_sleeping_thread.current_thread = thread_current();
-  temp_sleeping_thread.ticks_till_release = start + ticks;
-
-  // Ensure interrupts are disabled while we are modifying the sleeping_threads list
-  enum intr_level old_level = intr_disable();
-
-  // Insert the sleeping thread into the sleeping_threads list in sorted order
-  list_insert_ordered(&sleeping_threads, &temp_sleeping_thread.next_thread, order_sleeping_threads, NULL);
-
-  // Block the thread
-  thread_block();
-
-  // Re-enable interrupts
-  intr_set_level(old_level);
+  intr_disable();
+  // Set the thread to sleep
+  set_sleeping_thread(ticks);
+  intr_set_level(INTR_ON);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -201,30 +159,19 @@ void timer_print_stats(void)
   printf("Timer: %" PRId64 " ticks\n", timer_ticks());
 }
 
-/* Timer interrupt handler. Checks if any sleeping threads are complete. */
+/* Timer interrupt handler. */
 static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
   ticks++;
-  thread_tick();
 
-  // Check the sleeping_threads list to unlbock any threads that are done sleeping
-  struct list_elem *temp_elm;
-  for (temp_elm = list_begin(&sleeping_threads); temp_elm != list_end(&sleeping_threads); temp_elm = list_next(temp_elm))
+  if (thread_mlfqs && ticks % TIMER_FREQ == 0)
   {
-    struct sleeping_thread *temp_sleeping_thread = list_entry(temp_elm, struct sleeping_thread, next_thread);
-    if (temp_sleeping_thread->ticks_till_release <= ticks)
-    {
-      // Remove the thread from the sleeping_threads list
-      list_remove(temp_elm);
-      // Unblock the thread
-      thread_unblock(temp_sleeping_thread->current_thread);
-    }
-    else
-    {
-      break;
-    }
+    // Update ticks
+    tick_every_second();
   }
+
+  thread_tick();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

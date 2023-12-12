@@ -1,9 +1,9 @@
 # 7035-OS
 
 ### Group Members:
-Urjit Sharma, A01268545
-Ke Yang, A01261443
-Colin Lam, A01265887
+Urjit Sharma
+Ke Yang
+Colin Lam
 
 ## Project 1: Threads
 
